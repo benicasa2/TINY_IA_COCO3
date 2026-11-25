@@ -12,42 +12,113 @@ import sqlite3
 import subprocess
 import threading
 import unicodedata
-from urllib.error import URLError
-from urllib.parse import urlencode
+from urllib.error import HTTPError, URLError
+from urllib.parse import urlencode, urlsplit
 from urllib.request import Request, urlopen
 from uuid import uuid4
 
-USER_AGENT = "TinyIACoCo3/1.1 (https://github.com/benicasa2/TINY_IA_COCO3)"
-WIKIS = {"en": "en.wikipedia.org", "pt": "pt.wikipedia.org"}
+USER_AGENT = "TinyIACoCo3/1.2 (https://github.com/benicasa2/TINY_IA_COCO3)"
+LANGUAGES = {"en": "us", "pt": "br"}
 MAX_RECORD = 16384
 
 
-def question_key(text):
+class SearchError(Exception):
+    """A safe, user-facing error that never includes the API key."""
+
+
+def legacy_key(text):
     return " ".join(re.findall(r"[a-z0-9]+", text.casefold()))
 
 
+def question_key(text):
+    text = unicodedata.normalize("NFKD", text.casefold())
+    text = "".join(c for c in text if not unicodedata.combining(c))
+    # Keep operators and decimal separators: 2+2 and 2-2 are different facts.
+    text = text.strip().rstrip("?!.,;:")
+    return " ".join(re.findall(r"[a-z0-9]+|[+*/^%=<>-]|[.,](?=[0-9])", text))
+
+
+def source_url(url):
+    if not isinstance(url, str) or any(c.isspace() for c in url):
+        return ""
+    try:
+        parsed = urlsplit(url)
+        if parsed.scheme in ("http", "https") and parsed.hostname and not parsed.username:
+            return url
+    except ValueError:
+        pass
+    return ""
+
+
+def serp_request(key, **params):
+    query = urlencode({**params, "api_key": key})
+    request = Request(f"https://serpapi.com/search.json?{query}", headers={"User-Agent": USER_AGENT})
+    try:
+        with urlopen(request, timeout=9) as result:
+            payload = json.loads(result.read(1_500_000))
+    except HTTPError as exc:
+        if exc.code in (401, 403):
+            raise SearchError("SerpApi key rejected. Check SERPAPI_API_KEY.") from None
+        if exc.code == 429:
+            raise SearchError("SerpApi limit reached. Try again later.") from None
+        raise SearchError("Google search service returned an error.") from None
+    if not isinstance(payload, dict) or payload.get("error"):
+        raise SearchError("Google search service returned an error.")
+    return payload
+
+
+def plain_text(value):
+    return " ".join(value.split()) if isinstance(value, str) else ""
+
+
+def overview_text(entries):
+    for entry in entries:
+        if not isinstance(entry, dict):
+            continue
+        text = plain_text(entry.get("snippet") or entry.get("title"))
+        if entry.get("type") != "heading" and text:
+            yield text
+        for field in ("list", "text_blocks"):
+            children = entry.get(field)
+            if isinstance(children, list):
+                yield from overview_text(children)
+
+
 def lookup(question, language="en"):
-    wiki = WIKIS[language]
-    arguments = urlencode({
-        "action": "query", "format": "json", "formatversion": 2,
-        "generator": "search", "gsrsearch": question, "gsrlimit": 3,
-        "gsrnamespace": 0, "prop": "extracts|info",
-        "exintro": 1, "explaintext": 1, "exchars": 320, "exlimit": 3,
-        "inprop": "url",
-    })
-    request = Request(f"https://{wiki}/w/api.php?{arguments}", headers={"User-Agent": USER_AGENT})
-    with urlopen(request, timeout=8) as response:
-        payload = json.loads(response.read(512_000))
-    pages = sorted(payload.get("query", {}).get("pages", []), key=lambda page: page.get("index", 999))
-    for page in pages:
-        extract = " ".join(page.get("extract", "").split())
-        if extract:
-            return {
-                "question": question, "title": page["title"], "text": extract[:400],
-                "url": f"https://{wiki}/?curid={page['pageid']}",
-                "date": datetime.now(timezone.utc).isoformat(timespec="seconds"),
-            }
-    return None
+    key = os.environ.get("SERPAPI_API_KEY", "").strip()
+    if not key:
+        raise SearchError("Set SERPAPI_API_KEY in Windows before starting the bridge.")
+    payload = serp_request(key, engine="google", q=question, hl=language, gl=LANGUAGES[language])
+    google_link = "https://www.google.com/search?" + urlencode({"q": question, "hl": language})
+    box = payload.get("answer_box")
+    box = box if isinstance(box, dict) else {}
+    text = next((plain_text(box.get(field)) for field in ("answer", "result", "snippet")
+                 if plain_text(box.get(field))), "")
+    attribution = source_url(box.get("link"))
+    title = "Google direct answer"
+    if not text:
+        overview = payload.get("ai_overview")
+        overview = overview if isinstance(overview, dict) else {}
+        token = overview.get("page_token")
+        if isinstance(token, str) and token and not overview.get("text_blocks"):
+            extra = serp_request(key, engine="google_ai_overview", page_token=token)
+            overview = extra.get("ai_overview")
+            overview = overview if isinstance(overview, dict) else {}
+        blocks = overview.get("text_blocks")
+        if isinstance(blocks, list):
+            text = " ".join(overview_text(blocks))
+        references = overview.get("references")
+        if isinstance(references, list):
+            attribution = next((url for ref in references if isinstance(ref, dict)
+                                if (url := source_url(ref.get("link")))), "")
+        title = "Google AI Overview"
+    if not text:
+        return None
+    return {
+        "question": question, "title": title, "text": text,
+        "url": attribution or google_link, "provider": "google",
+        "date": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+    }
 
 
 def mounted_root(provider):
@@ -107,19 +178,22 @@ class Memory:
         fields = ("question", "title", "text", "url", "date")
         if not isinstance(item, dict) or any(not isinstance(item.get(k), str) for k in fields):
             return
-        item = {k: item[k] for k in fields}
+        provider = item.get("provider", "wikipedia")
+        item = {k: item[k] for k in fields} | ({"provider": provider} if "provider" in item else {})
         key = question_key(item["question"])
-        if not key or not item["url"].startswith(tuple(f"https://{wiki}/" for wiki in WIKIS.values())) or not item["text"]:
+        if not key or not source_url(item["url"]) or not item["text"] or provider not in ("google", "wikipedia"):
             return
         body = json.dumps(item, ensure_ascii=False, sort_keys=True)
         if len(body.encode("utf-8")) > MAX_RECORD:
             return
         digest = hashlib.sha256(body.encode("utf-8")).hexdigest()
         db.execute("INSERT OR IGNORE INTO facts VALUES (?, ?, ?, ?)", (digest, key, item["date"], body))
+        return True
 
     def save(self, item):
         with self.connect() as db:
-            self.insert(db, item)
+            if not self.insert(db, item):
+                return "Response could not be saved: invalid or too large."
         try:
             return "Saved locally. " + self.sync(self.config())
         except OSError:
@@ -157,17 +231,48 @@ class Memory:
                 exported += 1
         return f"Drive {config['provider'].upper()}: {imported} imported, {exported} exported."
 
-    def find(self, question):
+    def find(self, question, direct_only=False):
+        key = question_key(question)
         with self.connect() as db:
-            row = db.execute("SELECT body FROM facts WHERE key=? ORDER BY day DESC,id DESC LIMIT 1",
-                             (question_key(question),)).fetchone()
-        return json.loads(row[0]) if row else None
+            rows = db.execute("SELECT body FROM facts WHERE key IN (?, ?) ORDER BY day DESC,id DESC",
+                              (key, legacy_key(question)))
+            for (body,) in rows:
+                item = json.loads(body)
+                if question_key(item["question"]) == key and (
+                    not direct_only or item.get("provider") == "google"
+                ):
+                    return item
+        return None
 
     @staticmethod
     def format(item, label):
-        return (f"{label}: {item['title']}\n{item['text']}\n"
-                f"Source: {item['url']}\nDate: {item['date'][:10]}\n"
-                "Wikipedia (CC BY-SA; see article for attribution).")
+        direct = item.get("provider") == "google"
+        text = item["text"]
+        if len(text) > 395:
+            text = text[:392].rsplit(" ", 1)[0] + "..."
+        url = item["url"]
+        if len(url) > 155:
+            url = urlsplit(url).hostname or "See saved record for URL."
+        note = "Google via SerpApi." if direct else "Wikipedia archive (CC BY-SA)."
+        return f"{label}: {item['title']}\n{text}\nSource: {url}\nDate: {item['date'][:10]}\n{note}"
+
+    def answer(self, question, pending, refresh=False):
+        if not question_key(question):
+            return "Enter a question to send to Google.", pending
+        if not refresh:
+            cached = self.find(question, direct_only=True)
+            if cached:
+                return self.format(cached, "MEMORY"), None
+        try:
+            item = self.search(question, self.config().get("language", "en"))
+        except (SearchError, OSError, URLError, ValueError, KeyError) as exc:
+            cached = self.find(question)
+            if cached:
+                return self.format(cached, "OFFLINE MEMORY"), None
+            return (str(exc) if isinstance(exc, SearchError) else "Google search unavailable."), None
+        if item is None:
+            return "Google returned no direct answer. Try rephrasing the question.", None
+        return self.format(item, "ANSWER") + "\n/SAVE to remember.", item
 
     def execute(self, text, pending):
         cmd, _, arg = text.partition(" ")
@@ -175,7 +280,9 @@ class Memory:
         cmd = cmd.lower()
         if cmd == "/db":
             provider = self.config().get("provider", "local").upper()
-            return (f"Memory {provider}. /WEB topic, /SAVE, /FIND topic, /SYNC. /LANG EN or PT.\n"
+            google = "key set" if os.environ.get("SERPAPI_API_KEY", "").strip() else "key missing"
+            return (f"Memory {provider}. Google: {google}.\n"
+                    "/WEB question, /SAVE, /FIND question, /SYNC. /LANG EN or PT.\n"
                     "/DRIVE LOCAL | GOOGLE | ONEDRIVE [path].", pending)
         if cmd == "/drive":
             provider, _, path = arg.partition(" ")
@@ -185,24 +292,15 @@ class Memory:
             return "Use /DRIVE LOCAL, /DRIVE GOOGLE or /DRIVE ONEDRIVE [path].", pending
         if cmd == "/lang":
             language = arg.lower()
-            if language not in WIKIS:
+            if language not in LANGUAGES:
                 return "Use /LANG EN or /LANG PT.", pending
             with self.connect() as db:
                 db.execute("INSERT OR REPLACE INTO config VALUES ('language', ?)", (language,))
-            return f"Wikipedia language: {language.upper()}.", pending
+            return f"Google search language: {language.upper()}.", pending
         if cmd == "/sync":
             return self.sync(self.config()), pending
         if cmd == "/web":
-            if not question_key(arg):
-                return "Use /WEB followed by a topic.", None
-            try:
-                item = self.search(arg, self.config().get("language", "en"))
-            except (OSError, URLError, ValueError, KeyError):
-                item = self.find(arg)
-                if item:
-                    return self.format(item, "OFFLINE MEMORY"), None
-                return "Web unavailable. Saved facts can still be read with /FIND.", None
-            return (self.format(item, "WEB") + "\n/SAVE to remember." if item else "No article found."), item
+            return self.answer(arg, pending, refresh=True)
         if cmd == "/save":
             return (self.save(pending) if pending else "Use /WEB before /SAVE."), None
         if cmd == "/find":
@@ -210,8 +308,7 @@ class Memory:
             return (self.format(item, "MEMORY") if item else "No saved answer for this question."), pending
         if cmd.startswith("/"):
             return "Unknown command. Type /DB for web and memory help.", pending
-        item = self.find(text)
-        return (self.format(item, "MEMORY") if item else ""), pending
+        return self.answer(text, pending)
 
 
 class Connection(socketserver.StreamRequestHandler):

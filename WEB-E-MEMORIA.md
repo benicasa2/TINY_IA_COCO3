@@ -6,8 +6,9 @@ A edição Web funciona com as CPUs 6809 e 6309 no XRoar para Windows. O program
 
 1. Extraia o pacote inteiro e siga as instruções da edição para instalar o XRoar e as ROMs do CoCo 3 e do Disk BASIC.
 2. Instale Python 3 e mantenha `python.exe` no PATH.
-3. Abra `INICIAR-WEB.CMD`. Ele inicia a ponte local e o XRoar com 2 MB, a CPU da edição, os quatro discos e `WEB.BAS`.
-4. Digite `/DB` no chat para ver a configuração atual e a lista de comandos.
+3. Obtenha uma chave da SerpApi e defina a variável de ambiente do usuário `SERPAPI_API_KEY` no Windows. Abra uma nova janela ou reinicie o lançador para carregar a configuração. [Conta e chave da SerpApi](https://serpapi.com/manage-api-key)
+4. Abra `INICIAR-WEB.CMD`. Ele inicia a ponte local e o XRoar com 2 MB, a CPU da edição, os quatro discos e `WEB.BAS`.
+5. Digite `/DB` no chat para ver a configuração atual e a lista de comandos.
 
 `INICIAR-TINY.CMD` abre a edição local tradicional. Para usar a memória quando a internet cair ou estiver desligada, continue usando `INICIAR-WEB.CMD`. A ponte e o banco local continuam funcionando sem conexão externa.
 
@@ -32,17 +33,19 @@ Para caminhos longos, é possível indicar a pasta candidata no Windows por `TIN
 
 ```text
 /LANG PT
-/WEB Marte
+Quantas luas Marte tem?
 /SAVE
-/FIND Marte
+/FIND Quantas luas Marte tem?
 ```
 
-`/WEB` consulta a Wikipédia e exibe um trecho do artigo localizado, com o link e a data. Use `/LANG PT` ou `/LANG EN` para alterar o idioma da consulta. Após revisar o resultado, use `/SAVE` para arquivá-lo. `/FIND` consulta somente a memória. Uma pergunta normal também procura primeiro uma entrada salva quando o modo Web está ativo. Se houver uma entrada equivalente após normalizar caixa, espaços e pontuação, o Tiny exibe a informação arquivada. Caso contrário, ele usa sua rede local.
+No modo Web, perguntas normais consultam primeiro uma resposta direta já salva. Se ela ainda não estiver na memória, a ponte envia a pergunta completa ao Google via SerpApi. O CoCo exibe o conteúdo da caixa de resposta direta ou da Visão Geral criada por IA que o Google devolver, com a fonte disponível. A tela mostra uma prévia dos textos longos. `/SAVE` guarda a resposta completa recebida. `/WEB` seguido da pergunta força uma nova consulta. Se o Google devolver somente links de pesquisa, o Tiny informa que a resposta direta ficou indisponível. `/LANG PT` e `/LANG EN` definem o idioma e a região da busca.
 
-O aprendizado desta edição acontece na memória consultável. Os pesos originais continuam os mesmos. Para perguntas reformuladas, procure pelo mesmo nome ou pelas palavras usadas ao salvar. O banco local pode responder depois que o Windows perder o acesso à internet ou à pasta sincronizada. A operação em hardware físico com FujiNet e a sincronização com contas reais de nuvem precisam de teste separado.
+`/FIND` consulta somente a memória. Os resumos antigos da Wikipédia continuam disponíveis pelo arquivo e podem aparecer marcados como memória offline quando o Google estiver indisponível. A versão sem ponte, iniciada com `INICIAR-TINY.CMD`, continua a usar a inferência local original.
 
-[API de busca da Wikipédia](https://www.mediawiki.org/wiki/API:Search_and_discovery) · [Manual do XRoar](https://www.6809.org.uk/xroar/doc/xroar.shtml)
+A chave permanece no Windows. A escolha entre pasta local, OneDrive e Google Drive continua no CoCo. A ponte e o SQLite local permitem a leitura offline dos fatos salvos. Os pesos da rede continuam os mesmos.
+
+[Google Direct Answer Box via SerpApi](https://serpapi.com/direct-answer-box-api) · [Google AI Overview via SerpApi](https://serpapi.com/google-ai-overview-api)
 
 ## Verificação
 
-A consulta real a `Mars` foi executada pelo lançador Windows, com o XRoar, o Tiny 6809 e a API da Wikipédia. O resultado exibiu a fonte e foi salvo no SQLite com `/SAVE`. Nas duas CPUs, o teste com dados controlados confirmou a escolha do armazenamento no CoCo, a consulta local com a fonte Web indisponível, a exportação para pastas de teste e a importação para uma base vazia. Os clientes OneDrive e Google Drive com contas reais não fizeram parte desses testes.
+Os testes de integração usam respostas de API controladas para validar a pergunta completa, a caixa de resposta, a Visão Geral, o salvamento e a recuperação offline. A consulta real ao Google requer uma chave SerpApi configurada. A operação em hardware físico com FujiNet e a sincronização com contas reais de nuvem ainda precisam ser testadas.
