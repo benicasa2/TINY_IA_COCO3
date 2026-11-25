@@ -2,6 +2,8 @@
 
 Esta edição usa o mesmo modelo e os mesmos pesos do Tiny 2.1 para DOS. Requer um **Tandy Color Computer 3 com HD6309, 2 MB e DAT/MMU estendida compatível com a Disto**, ou a configuração equivalente no XRoar. O carregador e o interpretador Disk BASIC continuam a executar no modo compatível com 6809.
 
+Para ativar busca e memória persistente no XRoar, execute `INICIAR-WEB.CMD`. [Guia da extensão Web](../WEB-E-MEMORIA.md)
+
 ## Executar no Windows
 
 Extraia o ZIP inteiro e abra `INICIAR-TINY.CMD`. O lançador seleciona o HD6309 e 2048 KB no XRoar, monta os quatro discos e inicia o Tiny. Na pasta original do workspace, ele encontra o XRoar e as ROMs usados nos testes. Em outro local, coloque o executável na subpasta `xroar` ou no PATH e as ROMs `coco3.rom` e `disk11.rom` na subpasta `roms`. Você também pode indicar esses caminhos por `XROAR_EXE` e `XROAR_ROM_DIR`.

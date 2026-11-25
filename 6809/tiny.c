@@ -638,6 +638,46 @@ done:
     if (!plain) ui_input("");
 }
 
+/* Becker registers. The Windows bridge handles HTTPS and persistence. */
+#define NET_STATUS (*(unsigned char *)0xff41)
+#define NET_DATA (*(unsigned char *)0xff42)
+static unsigned char memory_on;
+
+static int bridge(const char *q)
+{
+    static unsigned char sequence = 'A';
+    unsigned char id, c, state = 0, discard = 0;
+    unsigned start = ticks();
+    id = sequence++;
+    if (sequence > 'Z') sequence = 'A';
+    NET_DATA = 10;
+    NET_DATA = id;
+    while (*q) NET_DATA = (unsigned char)*q++;
+    NET_DATA = 10;
+    do {
+        if (key() == 3) break;
+        if (NET_STATUS == 2) {
+            c = NET_DATA;
+            if (discard) {
+                if (!c) discard = 0;
+            } else if (!state) {
+                if (c == id) state = 1;
+                else if (c) discard = 1;
+            } else if (state == 1) {
+                memory_on = 1;
+                if (c == '0') state = 2;
+                else if (c == '1') state = 3;
+                else { state = 0; discard = c != 0; }
+            } else if (!c) {
+                if (state == 3) ui_put('\n');
+                return state == 3;
+            } else if (state == 3) ui_put(c);
+        }
+    } while (ticks() - start < 7200u);
+    memory_on = 0;
+    return -1;
+}
+
 int main(void)
 {
     static char line[MAXQ+1], q[MAXQ+1];
@@ -659,6 +699,7 @@ int main(void)
     ui_text("Ready: 4 layers, 96 wide. Ask a question.\n");
     if (!quiet) sound(120,2);
     if (START_MODE == 1) run_demo();
+    memory_on = START_MODE == 3;
     while (read_line(line)) {
         if (!clean(line, q)) continue;
         if (is_word(q, "quit") || is_word(q, "exit")) break;
@@ -683,7 +724,10 @@ int main(void)
             ui_text(voice ? "Voice on\n" : "Voice off\n");
         } else if (q[0] == '/' && q[1] >= '0' && q[1] <= '9' && !q[2]) {
             set_creativity(q[1] - '0');
-        } else {
+        } else if (q[0] == '/') {
+            ui_text("Contacting bridge...\n");
+            if (bridge(q) < 0) ui_text("Bridge unavailable or stopped.\n");
+        } else if (!memory_on || bridge(q) <= 0) {
             strcpy(last_q,q);
             ui_text("TINY: ");
             think(q,0);

@@ -22,6 +22,10 @@ RUN "START.BAS:0"
 
 Para uma unidade, use `RUN "SWAP.BAS:0"` e siga as instruções de troca. Com quatro unidades, `RUN "DEMO.BAS:0"` abre a demonstração. `RUN "BATCH.BAS:0"` lê `ASK.TXT` e recria `ANSWERS.TXT` na unidade 3, que precisa estar gravável.
 
+## Web e memória persistente
+
+As duas edições têm `INICIAR-WEB.CMD` para iniciar a ponte no Windows. No chat, use `/DB` para ajuda, `/DRIVE GOOGLE` ou `/DRIVE ONEDRIVE` para selecionar a pasta montada, `/WEB` para consultar a Wikipédia e `/SAVE` para guardar o resultado. Uma cópia local possibilita consultar a memória sem internet. [Guia da extensão Web](WEB-E-MEMORIA.md)
+
 ## Chat e controles
 
 Digite as perguntas em inglês. Use `/0` para comparar respostas sem sorteio, ou `/1` a `/9` para variar a criatividade. O padrão é 5. O monitor mostra o progresso de leitura e geração. `BREAK` cancela a inferência e `QUIT` volta ao BASIC.

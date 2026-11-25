@@ -182,6 +182,7 @@ def main():
             disk.add("START.BAS", loader(len(pages)), basic=True)
             disk.add("SWAP.BAS", loader(len(pages), swap=True), basic=True)
             disk.add("DEMO.BAS", loader(len(pages), mode=1), basic=True)
+            disk.add("WEB.BAS", loader(len(pages), mode=3), basic=True)
             disk.add("BATCH.BAS", loader(len(pages), mode=2), basic=True)
             disk.add("BANK.BIN", (build / "BANK.BIN").read_bytes())
             disk.add("TINY.BIN", (build / "TINY.BIN").read_bytes())

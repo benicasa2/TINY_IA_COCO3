@@ -2,6 +2,8 @@
 
 Port nativo para **MC6809, 2 MB com DAT/MMU estendida compatível com a Disto e Disk Extended Color BASIC**. O pacote inclui quatro imagens RS-DOS de 35 trilhas, o código-fonte e os pesos originais. Use a ROM do CoCo 3 e a ROM Disk BASIC da sua máquina ao configurar o emulador.
 
+Para ativar busca e memória persistente no XRoar, execute `INICIAR-WEB.CMD`. [Guia da extensão Web](../WEB-E-MEMORIA.md)
+
 ## Iniciar no Windows
 
 Execute `INICIAR-TINY.CMD` na pasta extraída. Ele configura o XRoar para CoCo 3 com 2048 KB e cartucho RS-DOS, monta os quatro discos e inicia o Tiny automaticamente. O lançador desativa o limite de velocidade do emulador por padrão. Defina `XROAR_REALTIME=1` para reproduzir a velocidade real da máquina. A sessão de chat abre com a gravação nas imagens desativada. Para usar o modo em lote, siga as instruções de montagem gravável abaixo.
