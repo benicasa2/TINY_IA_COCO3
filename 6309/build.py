@@ -6,8 +6,9 @@ import sys
 import tempfile
 
 root = Path(__file__).resolve().parent
-if len(sys.argv) != 2:
-    sys.exit("Usage: python build.py OUTPUT_DIRECTORY")
+if len(sys.argv) not in (2, 3) or (len(sys.argv) == 3 and sys.argv[2] != "--fujinet"):
+    sys.exit("Usage: python build.py OUTPUT_DIRECTORY [--fujinet]")
+fujinet = len(sys.argv) == 3
 out = Path(sys.argv[1]).resolve()
 out.mkdir(parents=True, exist_ok=True)
 
@@ -22,6 +23,11 @@ with tempfile.TemporaryDirectory(prefix="tiny-coco3-") as tmp:
                     "bank.asm"], cwd=work, check=True)
     subprocess.run(["lwasm", "--6309", "-fobj", "--output=dot6309.o",
                     "dot6309.asm"], cwd=work, check=True)
-    subprocess.run(["cmoc", "--coco", "--org=2000", "--limit=6000", "-O2",
+    flags = []
+    if fujinet:
+        driver = root / "fujinet.inc"
+        shutil.copyfile(driver if driver.is_file() else root.parent / "fujinet.inc", work / "fujinet.inc")
+        flags.append("-DTINY_FUJINET")
+    subprocess.run(["cmoc", *flags, "--coco", "--org=2000", "--limit=6000", "-O2",
                     "-o", "TINY.BIN", "tiny.c", "dot6309.o"], cwd=work, check=True)
-    subprocess.run([*pack, str(out)], cwd=work, check=True)
+    subprocess.run([*pack, str(out), *sys.argv[2:]], cwd=work, check=True)

@@ -31,17 +31,29 @@ typedef struct {
 #include "model.h"
 
 /* These work areas have disjoint lifetimes within each token. */
+#ifdef TINY_FUJINET
+static float bx[D], bh[D], bt[D];
+#else
 static float bx[D], bh[D], bt[D], ba[D];
+#endif
 static float layer_act[L], last_conf;
 static int creativity = 5;
 static union {
     float hidden[HID];
     float logits[VOCAB];
 } output_work;
+#ifndef TINY_FUJINET
 static float bs[CTX];
+#endif
 #define gain bt
 #define bq bh
 #define bm (output_work.hidden)
+#ifdef TINY_FUJINET
+/* Attention output is dead before the feed-forward output is written. */
+#define ba (output_work.hidden)
+/* The upper half is free during attention and token sampling. */
+#define bs (output_work.hidden + CTX)
+#endif
 #define score (output_work.logits)
 
 static const unsigned char *row(const Table *t, unsigned r)
@@ -638,11 +650,14 @@ done:
     if (!plain) ui_input("");
 }
 
+static unsigned char memory_on;
+
+#ifdef TINY_FUJINET
+#include "fujinet.inc"
+#else
 /* Becker registers. The Windows bridge handles HTTPS and persistence. */
 #define NET_STATUS (*(unsigned char *)0xff41)
 #define NET_DATA (*(unsigned char *)0xff42)
-static unsigned char memory_on;
-
 static int bridge(const char *q)
 {
     static unsigned char sequence = 'A';
@@ -678,6 +693,8 @@ static int bridge(const char *q)
     return -1;
 }
 
+#endif
+
 int main(void)
 {
     static char line[MAXQ+1], q[MAXQ+1];
@@ -699,7 +716,11 @@ int main(void)
     ui_text("Ready: 4 layers, 96 wide. Ask a question.\n");
     if (!quiet) sound(120,2);
     if (START_MODE == 1) run_demo();
+#ifdef TINY_FUJINET
+    memory_on = START_MODE == 4;
+#else
     memory_on = START_MODE == 3;
+#endif
     while (read_line(line)) {
         if (!clean(line, q)) continue;
         if (is_word(q, "quit") || is_word(q, "exit")) break;
@@ -733,6 +754,9 @@ int main(void)
             think(q,0);
         }
     }
+#ifdef TINY_FUJINET
+    fn_close();
+#endif
     cls(255);
     plain = 1;
     ui_text("Goodbye!\n");

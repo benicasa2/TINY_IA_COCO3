@@ -145,6 +145,14 @@ def loader(pages, swap=False, mode=0):
     ]
     if swap:
         lines.insert(-1, 'PRINT "REMOUNT DISK 1 IN DRIVE 0. PRESS ENTER":GOSUB 900')
+    if mode == 4:
+        lines.extend([
+            'LINE INPUT "PC IP AND PORT (E.G. 192.168.1.10:65504)";A$',
+            'IF LEN(A$)=0 OR LEN(A$)>61 THEN END',
+            'A$="N:TCP://"+A$+"/"',
+            'FOR J=1 TO LEN(A$):POKE &H1EFF+J,ASC(MID$(A$,J,1)):NEXT',
+            'POKE &H1F00+LEN(A$),0',
+        ])
     lines.append(f'POKE &H1EF2,{mode}')
     if mode != 2:
         lines.extend(['POKE 65497,0:EXEC:POKE 65496,0', 'END'])
@@ -182,7 +190,10 @@ def main():
             disk.add("START.BAS", loader(len(pages)), basic=True)
             disk.add("SWAP.BAS", loader(len(pages), swap=True), basic=True)
             disk.add("DEMO.BAS", loader(len(pages), mode=1), basic=True)
-            disk.add("WEB.BAS", loader(len(pages), mode=3), basic=True)
+            if "--fujinet" in sys.argv[4:]:
+                disk.add("FUJI.BAS", loader(len(pages), mode=4), basic=True)
+            else:
+                disk.add("WEB.BAS", loader(len(pages), mode=3), basic=True)
             disk.add("BATCH.BAS", loader(len(pages), mode=2), basic=True)
             disk.add("BANK.BIN", (build / "BANK.BIN").read_bytes())
             disk.add("TINY.BIN", (build / "TINY.BIN").read_bytes())

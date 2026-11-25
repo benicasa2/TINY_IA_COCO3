@@ -3,6 +3,7 @@ import argparse
 from contextlib import contextmanager
 from datetime import datetime, timezone
 import hashlib
+from ipaddress import IPv4Address, AddressValueError
 import json
 import os
 from pathlib import Path
@@ -342,20 +343,35 @@ class Bridge(socketserver.ThreadingTCPServer):
     allow_reuse_address = True
     daemon_threads = True
 
-    def __init__(self, address, memory):
+    def __init__(self, address, memory, allowed_client=None):
         self.memory = memory
+        self.allowed_client = allowed_client
         super().__init__(address, Connection)
+
+    def verify_request(self, request, client_address):
+        return self.allowed_client is None or client_address[0] == self.allowed_client
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--data", type=Path, default=Path(os.environ.get("LOCALAPPDATA", Path.home())) / "TinyIA-CoCo3")
     parser.add_argument("--port", type=int, default=65504)
+    parser.add_argument("--listen", default="127.0.0.1", help="IPv4 address of this PC")
+    parser.add_argument("--allow", help="IPv4 address of the FujiNet on the local network")
     parser.add_argument("emulator", nargs=argparse.REMAINDER)
     args = parser.parse_args()
-    with Bridge(("127.0.0.1", args.port), Memory(args.data)) as server:
+    try:
+        bind = IPv4Address(args.listen)
+        client = IPv4Address(args.allow) if args.allow else None
+    except AddressValueError:
+        parser.error("--listen and --allow require IPv4 addresses")
+    if bind.is_unspecified or bind.is_multicast or (not bind.is_loopback and client is None):
+        parser.error("bind to a specific PC address; LAN mode requires --allow FUJINET_IP")
+    if args.emulator and not bind.is_loopback:
+        parser.error("the emulator launcher requires a loopback listener")
+    with Bridge((str(bind), args.port), Memory(args.data), str(client) if client else None) as server:
         if not args.emulator:
-            print(f"Tiny bridge ready on 127.0.0.1:{args.port}", flush=True)
+            print(f"Tiny bridge ready on {bind}:{server.server_address[1]}", flush=True)
             server.serve_forever()
         else:
             emulator = args.emulator[1:] if args.emulator[0] == "--" else args.emulator
